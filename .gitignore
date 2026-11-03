@@ -1,0 +1,21 @@
+# Node
+node_modules/
+dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+
+# Python
+.venv/
+__pycache__/
+
+# Built function packages (build them in Terraform or CI)
+*.zip
+
+# OS / editor
+.DS_Store
+.idea/
