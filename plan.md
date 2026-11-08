@@ -5,10 +5,23 @@ Order matters here. Each phase leaves something working and verifiable before th
 ## Phase 0: Prerequisites and accounts
 
 1. Buy a domain (or reuse one) and decide on a registrar. You will point its nameservers at Cloud DNS (GCP).
-2. Create accounts: GCP and GitHub.
+2. Create accounts: GitHub, and a GCP organization via Cloud Identity Free on your domain (verify the domain with a TXT record at your registrar). Keep the first user (`wilson-admin@yanhao.dev`) as the super admin and use it only in the Admin console (https://admin.google.com) for users, domains, security settings and recovery. In the Admin console, create a second user (`wilson@yanhao.dev`) for day-to-day GCP work and give it no admin role there. Enable 2-step verification on both and save the super admin's backup codes. Then create a GCP billing account (this needs `roles/billing.creator` on the org; see item 5).
 3. Install tooling: Terraform >= 1.7, Node.js LTS (pin it in `.nvmrc`), [uv](https://docs.astral.sh/uv/) (it installs and manages Python 3.14 for the Cloud Function; the version is pinned later in `functions/visitor-counter/.python-version`, see Phase 4), gcloud SDK, Git.
 4. Create the GitHub repo. Add a root `.gitignore` (`node_modules/`, `dist/`, `.terraform/`, `*.tfstate*`, `*.tfvars`, `.venv/`, `__pycache__/`, `*.zip`, `.DS_Store`, `.idea/`) and a LICENSE (MIT).
 5. Set up IAM: a dedicated admin identity for GCP (not a personal owner account used day to day), and a billing budget and alert so experiments can't surprise you.
+   - Find the org ID with `gcloud organizations list`. Signed in as the super admin (`wilson-admin@yanhao.dev`), grant it `roles/resourcemanager.organizationAdmin`, `roles/resourcemanager.projectCreator`, `roles/billing.creator` (needed once, to create the billing account) and `roles/billing.admin` on the org, then create the billing account. Console route: IAM & Admin, switch the scope to the organization, then edit the principal.
+   - Still as the super admin, create the project under the org (`gcloud projects create <id> --organization=<org-id>`) and link billing (`gcloud billing projects link <id> --billing-account=<account-id>`).
+   - Grant the day-to-day user (`wilson@yanhao.dev`) only what it needs, with no org-level roles (leave org IAM and org policies to the super admin):
+     ```bash
+     gcloud projects add-iam-policy-binding <project-id> \
+       --member=user:wilson@yanhao.dev --role=roles/owner
+     ```
+     Owner on this one dedicated project is the practical least-privilege choice: Phase 2 enables APIs, creates the state bucket and sets up Workload Identity Federation with IAM bindings, and Editor cannot set IAM policies. Optionally add `roles/billing.costsManager` on the billing account (Billing, Account management, Add principal) if this user will create or change budgets. Add `roles/resourcemanager.projectCreator` on the org only if it will create more projects.
+   - Sign in to gcloud as the day-to-day user from now on (`gcloud auth login wilson@yanhao.dev`, plus `gcloud auth application-default login` for Terraform). Use a separate browser profile so it does not mix with personal accounts.
+   - Once the day-to-day user works, remove `roles/billing.creator` from the super admin, and optionally its other GCP roles, so it holds only what it needs for recovery.
+   - Enable `billingbudgets.googleapis.com` and create a budget with `gcloud billing budgets create` (threshold rules at 50%, 90%, 100% and 100% forecasted). A budget only sends alerts and never stops spending. For a hard cap, route the budget to a Pub/Sub topic and have a function detach billing from the project.
+   - Do not create a hand-made Terraform service account or download keys. Locally Terraform runs as your user through application-default credentials, and CI uses the Workload Identity Federation service account from Phase 2. Optionally enforce the org policy `iam.disableServiceAccountKeyCreation`.
+   - Remove the Owner role from any personal account.
 6. Decide the hostnames up front: the site at `<domain>` and the API at `api.<domain>`.
 7. Check quotas before you rely on a service, especially the GCP project's Compute quotas in your target region.
 
